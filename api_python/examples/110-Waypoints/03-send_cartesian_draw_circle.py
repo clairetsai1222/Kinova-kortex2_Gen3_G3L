@@ -16,6 +16,7 @@ import sys
 import os
 import time
 import threading
+import math
 
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
 from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
@@ -23,8 +24,9 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 
 from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 
+
 # Maximum allowed waiting time during actions (in seconds)
-TIMEOUT_DURATION = 100
+TIMEOUT_DURATION = 30
 
 # Create closure to set an event after an END or an ABORT
 def check_for_end_or_abort(e):
@@ -77,90 +79,61 @@ def example_move_to_home_position(base):
     else:
         print("Timeout on action notification wait")
     return finished
-
-
-def populateAngularPose(jointPose,durationFactor):
-    '''
-    创建一个角度路点，并设置其关节角度和持续时间
-    '''
-    waypoint = Base_pb2.AngularWaypoint()
-    waypoint.angles.extend(jointPose)
-    waypoint.duration = durationFactor*5.0    
+def populateCartesianCoordinate(waypointInformation):
+    
+    waypoint = Base_pb2.CartesianWaypoint()  
+    waypoint.pose.x = waypointInformation[0]
+    waypoint.pose.y = waypointInformation[1]
+    waypoint.pose.z = waypointInformation[2]
+    waypoint.blending_radius = waypointInformation[3]
+    waypoint.pose.theta_x = waypointInformation[4]
+    waypoint.pose.theta_y = waypointInformation[5]
+    waypoint.pose.theta_z = waypointInformation[6] 
+    waypoint.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
     
     return waypoint
- 
 
 def example_trajectory(base, base_cyclic):
-
     base_servo_mode = Base_pb2.ServoingModeInformation()
     base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
     base.SetServoingMode(base_servo_mode)
 
-    jointPoses = tuple(tuple())
-    product = base.GetProductConfiguration()
+    # Define circle parameters
+    x_center = 0.8
+    y_center = 0.1
+    z_center = 0.04
+    radius = 0.05
+    num_points = 50  # Number of points to define the circle
 
-    if(   product.model == Base_pb2.ProductConfiguration__pb2.MODEL_ID_L53 
-    or product.model == Base_pb2.ProductConfiguration__pb2.MODEL_ID_L31):
-        if(product.model == Base_pb2.ProductConfiguration__pb2.MODEL_ID_L31):
-            jointPoses = (  (0.0,  344.0, 75.0,  360.0, 300.0, 0.0),
-                            (0.0,  21.0,  145.0, 272.0, 32.0,  273.0),
-                            (42.0, 334.0, 79.0,  241.0, 305.0, 56.0))
-        else:
-            # Binded to degrees of movement and each degrees correspond to one degree of liberty
-            degreesOfFreedom = base.GetActuatorCount();
+    waypointsDefinition = []
+    for i in range(num_points):
+        angle = 2 * math.pi * i / num_points
+        x = x_center + radius * math.cos(angle)
+        y = y_center + radius * math.sin(angle)
+        z = z_center
+        # Assuming orientation remains constant
+        theta_x = 90.0
+        theta_y = 0.0
+        theta_z = 90.0
+        waypointsDefinition.append((x, y, z, 0.0, theta_x, theta_y, theta_z))
 
-            if(degreesOfFreedom.count == 6):
-                jointPoses = (  ( 360.0, 35.6, 281.8, 0.8,  23.8, 88.9 ),
-                                ( 359.6, 49.1, 272.1, 0.3,  47.0, 89.1 ),
-                                ( 320.5, 76.5, 335.5, 293.4, 46.1, 165.6 ),
-                                ( 335.6, 38.8, 266.1, 323.9, 49.7, 117.3 ),
-                                ( 320.4, 76.5, 335.5, 293.4, 46.1, 165.6 ),
-                                ( 28.8,  36.7, 273.2, 40.8,  39.5, 59.8 ),
-                                ( 360.0, 45.6, 251.9, 352.2, 54.3, 101.0 ))
-            else:
-                jointPoses = (  ( 360.0, 35.6, 180.7, 281.8, 0.8,   23.8, 88.9  ),
-                                ( 359.6, 49.1, 181.0, 272.1, 0.3,   47.0, 89.1  ),
-                                ( 320.5, 76.5, 166.5, 335.5, 293.4, 46.1, 165.6 ),
-                                ( 335.6, 38.8, 177.0, 266.1, 323.9, 49.7, 117.3 ),
-                                ( 320.4, 76.5, 166.5, 335.5, 293.4, 46.1, 165.6 ),
-                                ( 28.8,  36.7, 174.7, 273.2, 40.8,  39.5, 59.8  ),
-                                ( 360.0, 45.6, 171.0, 251.9, 352.2, 54.3, 101.0 ))
-            
-    else:
-        print("Product is not compatible to run this example please contact support with KIN number bellow")
-        print("Product KIN is : " + product.kin())
-
-
-    waypoints = Base_pb2.WaypointList()    
+    waypoints = Base_pb2.WaypointList()
     waypoints.duration = 0.0
     waypoints.use_optimal_blending = False
-    
+
     index = 0
-    for jointPose in jointPoses:
+    for waypointDefinition in waypointsDefinition:
         waypoint = waypoints.waypoints.add()
         waypoint.name = "waypoint_" + str(index)
-        durationFactor = 1
-        # Joints/motors 5 and 7 are slower and need more time
-        if(index == 4 or index == 6):
-            durationFactor = 6 # Min 30 seconds
-        
-        waypoint.angular_waypoint.CopyFrom(populateAngularPose(jointPose, durationFactor))
-        index = index + 1 
-    
-    
-   # Verify validity of waypoints
-    result = base.ValidateWaypointList(waypoints);
-    if(len(result.trajectory_error_report.trajectory_error_elements) == 0):
+        waypoint.cartesian_waypoint.CopyFrom(populateCartesianCoordinate(waypointDefinition))
+        index += 1
 
+    result = base.ValidateWaypointList(waypoints)
+    if len(result.trajectory_error_report.trajectory_error_elements) == 0:
         e = threading.Event()
-        notification_handle = base.OnNotificationActionTopic(
-            check_for_end_or_abort(e),
-            Base_pb2.NotificationOptions()
-        )
+        notification_handle = base.OnNotificationActionTopic(check_for_end_or_abort(e), Base_pb2.NotificationOptions())
 
-        print("Reaching angular pose trajectory...")
-        
-        
+        print("Moving cartesian trajectory...")
         base.ExecuteWaypointTrajectory(waypoints)
 
         print("Waiting for trajectory to finish ...")
@@ -168,14 +141,30 @@ def example_trajectory(base, base_cyclic):
         base.Unsubscribe(notification_handle)
 
         if finished:
-            print("Angular movement completed")
+            print("Cartesian trajectory with no optimization completed ")
+            e_opt = threading.Event()
+            notification_handle_opt = base.OnNotificationActionTopic(check_for_end_or_abort(e_opt), Base_pb2.NotificationOptions())
+
+            waypoints.use_optimal_blending = True
+            base.ExecuteWaypointTrajectory(waypoints)
+
+            print("Waiting for trajectory to finish ...")
+            finished_opt = e_opt.wait(TIMEOUT_DURATION)
+            base.Unsubscribe(notification_handle_opt)
+
+            if finished_opt:
+                print("Cartesian trajectory with optimization completed ")
+            else:
+                print("Timeout on action notification wait for optimized trajectory")
+
+            return finished_opt
         else:
-            print("Timeout on action notification wait")
+            print("Timeout on action notification wait for non-optimized trajectory")
+
         return finished
     else:
-        print("Error found in trajectory") 
-        print(result.trajectory_error_report)
-        return finished
+        print("Error found in trajectory")
+        result.trajectory_error_report.PrintDebugString()
 
 
 def main():
@@ -194,6 +183,7 @@ def main():
         base = BaseClient(router)
         base_cyclic = BaseCyclicClient(router)
         
+
         # Example core
         success = True
 

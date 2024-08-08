@@ -12,6 +12,8 @@
 #
 ###
 
+# compute kinematics example
+
 import sys
 import os
 

@@ -78,42 +78,8 @@ def example_move_to_home_position(base):
         print("Timeout on action notification wait")
     return finished
 
-def example_angular_action_movement(base):
-    
-    print("Starting angular action movement ...")
-    action = Base_pb2.Action()
-    action.name = "Example angular action movement"
-    action.application_data = ""
 
-    actuator_count = base.GetActuatorCount()
-
-    # Place arm straight up
-    for joint_id in range(actuator_count.count):
-        joint_angle = action.reach_joint_angles.joint_angles.joint_angles.add()
-        joint_angle.joint_identifier = joint_id
-        joint_angle.value = 0
-
-    e = threading.Event()
-    notification_handle = base.OnNotificationActionTopic(
-        check_for_end_or_abort(e),
-        Base_pb2.NotificationOptions()
-    )
-    
-    print("Executing action")
-    base.ExecuteAction(action)
-
-    print("Waiting for movement to finish ...")
-    finished = e.wait(TIMEOUT_DURATION)
-    base.Unsubscribe(notification_handle)
-
-    if finished:
-        print("Angular movement completed")
-    else:
-        print("Timeout on action notification wait")
-    return finished
-
-
-def example_cartesian_action_movement(base, base_cyclic):
+def example_cartesian_action_movement(base, base_cyclic, pose_x, pose_y, pose_z):
     '''
     Arg:
     base: an instance of BaseClient 基础客户端
@@ -128,9 +94,9 @@ def example_cartesian_action_movement(base, base_cyclic):
     feedback = base_cyclic.RefreshFeedback() # 从base_cyclic客户端获取当前的反馈信息
 
     cartesian_pose = action.reach_pose.target_pose
-    cartesian_pose.x = feedback.base.tool_pose_x          # (meters)
-    cartesian_pose.y = feedback.base.tool_pose_y + 0.1    # (meters)
-    cartesian_pose.z = feedback.base.tool_pose_z + 0.2    # (meters)
+    cartesian_pose.x = pose_x          # (meters)
+    cartesian_pose.y = pose_y   # (meters)
+    cartesian_pose.z = pose_z    # (meters)
     cartesian_pose.theta_x = feedback.base.tool_pose_theta_x # (degrees)夹爪角度：+往下；-往上
     cartesian_pose.theta_y = feedback.base.tool_pose_theta_y # (degrees)夹爪角度：+逆时针；-顺时针
     cartesian_pose.theta_z = feedback.base.tool_pose_theta_z # (degrees)夹爪角度：+左转；-右转
@@ -173,14 +139,29 @@ def main():
         # Example core
         success = True
 
+        feedback = base_cyclic.RefreshFeedback() # 从base_cyclic客户端获取当前的反馈信息
         success &= example_move_to_home_position(base)
-        success &= example_cartesian_action_movement(base, base_cyclic)
-        success &= example_angular_action_movement(base)
 
-        # You can also refer to the 110-Waypoints examples if you want to execute
-        # a trajectory defined by a series of waypoints in joint space or in Cartesian space
+        feedback = base_cyclic.RefreshFeedback()
+        # 绘图初始点
+        drawing_default_pose = (feedback.base.tool_pose_x + 0.2, feedback.base.tool_pose_y + 0.1, feedback.base.tool_pose_z - 0.37)
+        success &= example_cartesian_action_movement(base, base_cyclic, drawing_default_pose[0], drawing_default_pose[1], drawing_default_pose[2])
+        # 定义矩形的四个顶点
+        feedback = base_cyclic.RefreshFeedback()
+        points = [
+            (feedback.base.tool_pose_x + 0.05, feedback.base.tool_pose_y),
+            (feedback.base.tool_pose_x + 0.05, feedback.base.tool_pose_y + 0.05),
+            (feedback.base.tool_pose_x - 0.05, feedback.base.tool_pose_y + 0.05),
+            (feedback.base.tool_pose_x - 0.05, feedback.base.tool_pose_y - 0.05) # 回到起点以完成矩形
+        ]
+
+        pose_z = feedback.base.tool_pose_z # 矩形高度
+        for pose_x, pose_y in points:   # 画四个点
+            print(pose_x, pose_y, pose_z)
+            success &= example_cartesian_action_movement(base, base_cyclic, pose_x, pose_y, pose_z)
 
         return 0 if success else 1
 
 if __name__ == "__main__":
     exit(main())
+

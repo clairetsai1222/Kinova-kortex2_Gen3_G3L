@@ -77,6 +77,7 @@ def example_move_to_home_position(base):
     else:
         print("Timeout on action notification wait")
     return finished
+
 def populateCartesianCoordinate(waypointInformation):
     
     waypoint = Base_pb2.CartesianWaypoint()  
